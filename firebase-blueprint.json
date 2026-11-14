@@ -1,0 +1,363 @@
+{
+  "entities": {
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Publicly discoverable user profile without private PII.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "rikzenId": { "type": "string" },
+        "rikzenIdLower": { "type": "string" },
+        "displayName": { "type": "string" },
+        "displayNameLower": { "type": "string" },
+        "bio": { "type": "string" },
+        "photoBase64": { "type": "string" },
+        "searchablePhone": { "type": "string" },
+        "isDiscoverableByName": { "type": "boolean" },
+        "isDiscoverableByPhone": { "type": "boolean" },
+        "isOnline": { "type": "boolean" },
+        "showOnlineStatus": { "type": "boolean" },
+        "showLastSeen": { "type": "boolean" },
+        "photoVisibility": { "type": "string", "enum": ["everyone", "friends", "nobody"] },
+        "bioVisibility": { "type": "string", "enum": ["everyone", "friends", "nobody"] },
+        "whoCanRequest": { "type": "string", "enum": ["everyone", "id_only"] },
+        "statusSuspended": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "rikzenId", "displayName", "createdAt", "updatedAt"]
+    },
+    "PrivateAccount": {
+      "title": "PrivateAccount",
+      "description": "Private PII and personal preferences accessible only by owner or admin.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "dob": { "type": "string" },
+        "emailVisible": { "type": "boolean" },
+        "readReceiptsEnabled": { "type": "boolean" },
+        "blockedUids": { "type": "array" },
+        "linkedDevices": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt", "updatedAt"]
+    },
+    "RikzenIdLookup": {
+      "title": "RikzenIdLookup",
+      "description": "Unique index mapping RIKZEN-XXXXXX IDs to user UIDs.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "rikzenId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "rikzenId", "createdAt"]
+    },
+    "PhoneLookup": {
+      "title": "PhoneLookup",
+      "description": "Opt-in phone number index mapping normalized phone to UID.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "phone": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "phone", "createdAt"]
+    },
+    "FriendRequest": {
+      "title": "FriendRequest",
+      "description": "Pending, accepted, or rejected friend request between two users.",
+      "type": "object",
+      "properties": {
+        "fromUid": { "type": "string" },
+        "toUid": { "type": "string" },
+        "fromName": { "type": "string" },
+        "fromRikzenId": { "type": "string" },
+        "fromPhotoBase64": { "type": "string" },
+        "toName": { "type": "string" },
+        "toRikzenId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "participantUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fromUid", "toUid", "status", "participantUids", "createdAt", "updatedAt"]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "description": "Confirmed bidirectional friend connection.",
+      "type": "object",
+      "properties": {
+        "userA": { "type": "string" },
+        "userB": { "type": "string" },
+        "participantUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userA", "userB", "participantUids", "createdAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Direct message or group conversation.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["dm", "group"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "photoBase64": { "type": "string" },
+        "participantUids": { "type": "array" },
+        "adminUids": { "type": "array" },
+        "createdBy": { "type": "string" },
+        "lastMessageText": { "type": "string" },
+        "lastMessageSenderId": { "type": "string" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "pinnedMessageId": { "type": "string" },
+        "onlyAdminsCanSend": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "participantUids", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Real-time message inside a conversation.",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "messageType": { "type": "string", "enum": ["text", "image", "document", "audio", "location"] },
+        "mediaBase64": { "type": "string" },
+        "mediaName": { "type": "string" },
+        "mediaMime": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "replyToId": { "type": "string" },
+        "replyToText": { "type": "string" },
+        "replyToSender": { "type": "string" },
+        "forwarded": { "type": "boolean" },
+        "edited": { "type": "boolean" },
+        "deleted": { "type": "boolean" },
+        "pinned": { "type": "boolean" },
+        "starredBy": { "type": "array" },
+        "deliveredTo": { "type": "array" },
+        "readBy": { "type": "array" },
+        "reactions": { "type": "object" },
+        "participantUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["conversationId", "senderId", "messageType", "participantUids", "createdAt", "updatedAt"]
+    },
+    "TypingIndicator": {
+      "title": "TypingIndicator",
+      "description": "Realtime typing state for a user in a conversation.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "isTyping": { "type": "boolean" },
+        "participantUids": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "isTyping", "participantUids", "updatedAt"]
+    },
+    "StatusUpdate": {
+      "title": "StatusUpdate",
+      "description": "24-hour disappearing status update.",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownerRikzenId": { "type": "string" },
+        "ownerPhotoBase64": { "type": "string" },
+        "contentType": { "type": "string", "enum": ["text", "image"] },
+        "text": { "type": "string" },
+        "caption": { "type": "string" },
+        "backgroundColorHex": { "type": "string" },
+        "mediaBase64": { "type": "string" },
+        "audienceUids": { "type": "array" },
+        "viewerUids": { "type": "array" },
+        "reactions": { "type": "array" },
+        "mutedByUids": { "type": "array" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "contentType", "audienceUids", "expiresAt", "createdAt"]
+    },
+    "Community": {
+      "title": "Community",
+      "description": "Community hub grouping multiple chats and announcements.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "photoBase64": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "adminUids": { "type": "array" },
+        "memberUids": { "type": "array" },
+        "groupIds": { "type": "array" },
+        "announcementText": { "type": "string" },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerUid", "adminUids", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Channel": {
+      "title": "Channel",
+      "description": "One-to-many broadcast channel.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "photoBase64": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "adminUids": { "type": "array" },
+        "followerUids": { "type": "array" },
+        "followerCount": { "type": "integer" },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerUid", "adminUids", "followerUids", "followerCount", "createdAt", "updatedAt"]
+    },
+    "ChannelPost": {
+      "title": "ChannelPost",
+      "description": "Broadcast update published by a channel admin.",
+      "type": "object",
+      "properties": {
+        "channelId": { "type": "string" },
+        "authorUid": { "type": "string" },
+        "text": { "type": "string" },
+        "mediaBase64": { "type": "string" },
+        "reactions": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["channelId", "authorUid", "text", "createdAt"]
+    },
+    "CallRecord": {
+      "title": "CallRecord",
+      "description": "Real-time 1:1 voice or video call signaling and history.",
+      "type": "object",
+      "properties": {
+        "callerUid": { "type": "string" },
+        "callerName": { "type": "string" },
+        "callerPhotoBase64": { "type": "string" },
+        "calleeUid": { "type": "string" },
+        "calleeName": { "type": "string" },
+        "calleePhotoBase64": { "type": "string" },
+        "participantUids": { "type": "array" },
+        "callType": { "type": "string", "enum": ["voice", "video"] },
+        "status": { "type": "string", "enum": ["ringing", "active", "ended", "rejected", "missed"] },
+        "mutedByCaller": { "type": "boolean" },
+        "mutedByCallee": { "type": "boolean" },
+        "cameraOffCaller": { "type": "boolean" },
+        "cameraOffCallee": { "type": "boolean" },
+        "durationSeconds": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["callerUid", "calleeUid", "participantUids", "callType", "status", "createdAt", "updatedAt"]
+    },
+    "AbuseReport": {
+      "title": "AbuseReport",
+      "description": "Abuse report submitted for admin moderation.",
+      "type": "object",
+      "properties": {
+        "reporterUid": { "type": "string" },
+        "targetType": { "type": "string", "enum": ["user", "message", "group"] },
+        "targetId": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "resolved", "dismissed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reporterUid", "targetType", "targetId", "reason", "status", "createdAt", "updatedAt"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "Per-user notification inbox item.",
+      "type": "object",
+      "properties": {
+        "recipientUid": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "refId": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipientUid", "type", "title", "body", "isRead", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/public_profiles/{uid}": {
+      "schema": { "$ref": "#/entities/PublicProfile" },
+      "description": "Publicly discoverable profiles."
+    },
+    "/users/{uid}/private/{docId}": {
+      "schema": { "$ref": "#/entities/PrivateAccount" },
+      "description": "Private PII isolated per user."
+    },
+    "/rikzen_ids/{rikzenId}": {
+      "schema": { "$ref": "#/entities/RikzenIdLookup" },
+      "description": "Unique RIKZEN ID lookup index."
+    },
+    "/phone_lookup/{phone}": {
+      "schema": { "$ref": "#/entities/PhoneLookup" },
+      "description": "Opt-in phone number discovery index."
+    },
+    "/friend_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/FriendRequest" },
+      "description": "Friend request lifecycle documents."
+    },
+    "/friendships/{friendshipId}": {
+      "schema": { "$ref": "#/entities/Friendship" },
+      "description": "Accepted friendships."
+    },
+    "/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "DM and Group conversations."
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages within a conversation."
+    },
+    "/conversations/{conversationId}/typing/{uid}": {
+      "schema": { "$ref": "#/entities/TypingIndicator" },
+      "description": "Live typing indicator."
+    },
+    "/statuses/{statusId}": {
+      "schema": { "$ref": "#/entities/StatusUpdate" },
+      "description": "24-hour status updates."
+    },
+    "/communities/{communityId}": {
+      "schema": { "$ref": "#/entities/Community" },
+      "description": "Communities."
+    },
+    "/channels/{channelId}": {
+      "schema": { "$ref": "#/entities/Channel" },
+      "description": "Channels."
+    },
+    "/channels/{channelId}/posts/{postId}": {
+      "schema": { "$ref": "#/entities/ChannelPost" },
+      "description": "Channel posts."
+    },
+    "/calls/{callId}": {
+      "schema": { "$ref": "#/entities/CallRecord" },
+      "description": "Voice and video call signaling and history."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/AbuseReport" },
+      "description": "Moderation reports."
+    },
+    "/users/{uid}/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/AppNotification" },
+      "description": "User notification inbox."
+    }
+  }
+}

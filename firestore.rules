@@ -1,0 +1,627 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Default-deny catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-+.]+$');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email_verified == true && request.auth.token.email == 'phonedata9955@gmail.com')
+      );
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    // --- Validation Helpers ---
+
+    function isValidPublicProfile(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+        data.rikzenId is string && data.rikzenId.size() >= 6 && data.rikzenId.size() <= 32 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+        (!('rikzenIdLower' in data) || (data.rikzenIdLower is string && data.rikzenIdLower.size() <= 32)) &&
+        (!('displayNameLower' in data) || (data.displayNameLower is string && data.displayNameLower.size() <= 60)) &&
+        (!('bio' in data) || (data.bio is string && data.bio.size() <= 200)) &&
+        (!('photoBase64' in data) || (data.photoBase64 is string && data.photoBase64.size() <= 220000)) &&
+        (!('searchablePhone' in data) || (data.searchablePhone is string && data.searchablePhone.size() <= 32)) &&
+        (!('isDiscoverableByName' in data) || data.isDiscoverableByName is bool) &&
+        (!('isDiscoverableByPhone' in data) || data.isDiscoverableByPhone is bool) &&
+        (!('isOnline' in data) || data.isOnline is bool) &&
+        (!('showOnlineStatus' in data) || data.showOnlineStatus is bool) &&
+        (!('showLastSeen' in data) || data.showLastSeen is bool) &&
+        (!('photoVisibility' in data) || data.photoVisibility in ['everyone', 'friends', 'nobody']) &&
+        (!('bioVisibility' in data) || data.bioVisibility in ['everyone', 'friends', 'nobody']) &&
+        (!('whoCanRequest' in data) || data.whoCanRequest in ['everyone', 'id_only']) &&
+        (!('statusSuspended' in data) || data.statusSuspended is bool);
+    }
+
+    function isValidPrivateAccount(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+        data.email is string && data.email.size() <= 128 &&
+        (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() <= 32)) &&
+        (!('dob' in data) || (data.dob is string && data.dob.size() <= 32)) &&
+        (!('emailVisible' in data) || data.emailVisible is bool) &&
+        (!('readReceiptsEnabled' in data) || data.readReceiptsEnabled is bool) &&
+        (!('blockedUids' in data) || (data.blockedUids is list && data.blockedUids.size() <= 100)) &&
+        (!('linkedDevices' in data) || (data.linkedDevices is list && data.linkedDevices.size() <= 20));
+    }
+
+    function isValidRikzenIdLookup(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+        data.rikzenId is string && data.rikzenId.size() >= 6 && data.rikzenId.size() <= 32;
+    }
+
+    function isValidPhoneLookup(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+        data.phone is string && data.phone.size() >= 5 && data.phone.size() <= 32;
+    }
+
+    function isValidFriendRequest(data) {
+      return data.fromUid is string && data.fromUid.size() <= 128 &&
+        data.toUid is string && data.toUid.size() <= 128 &&
+        data.fromUid != data.toUid &&
+        data.status in ['pending', 'accepted', 'rejected'] &&
+        data.participantUids is list && data.participantUids.size() == 2 &&
+        (!('fromName' in data) || (data.fromName is string && data.fromName.size() <= 60)) &&
+        (!('fromRikzenId' in data) || (data.fromRikzenId is string && data.fromRikzenId.size() <= 32)) &&
+        (!('fromPhotoBase64' in data) || (data.fromPhotoBase64 is string && data.fromPhotoBase64.size() <= 220000)) &&
+        (!('toName' in data) || (data.toName is string && data.toName.size() <= 60)) &&
+        (!('toRikzenId' in data) || (data.toRikzenId is string && data.toRikzenId.size() <= 32));
+    }
+
+    function isValidFriendship(data) {
+      return data.userA is string && data.userA.size() <= 128 &&
+        data.userB is string && data.userB.size() <= 128 &&
+        data.userA != data.userB &&
+        data.participantUids is list && data.participantUids.size() == 2;
+    }
+
+    function isValidConversation(data) {
+      return data.type in ['dm', 'group'] &&
+        data.createdBy is string && data.createdBy.size() <= 128 &&
+        data.participantUids is list && data.participantUids.size() >= 1 && data.participantUids.size() <= 50 &&
+        (!('title' in data) || (data.title is string && data.title.size() <= 80)) &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 300)) &&
+        (!('photoBase64' in data) || (data.photoBase64 is string && data.photoBase64.size() <= 220000)) &&
+        (!('adminUids' in data) || (data.adminUids is list && data.adminUids.size() <= 20)) &&
+        (!('lastMessageText' in data) || (data.lastMessageText is string && data.lastMessageText.size() <= 500)) &&
+        (!('lastMessageSenderId' in data) || (data.lastMessageSenderId is string && data.lastMessageSenderId.size() <= 128)) &&
+        (!('pinnedMessageId' in data) || (data.pinnedMessageId is string && data.pinnedMessageId.size() <= 128)) &&
+        (!('onlyAdminsCanSend' in data) || data.onlyAdminsCanSend is bool);
+    }
+
+    function isValidMessage(data) {
+      return data.conversationId is string && data.conversationId.size() <= 128 &&
+        data.senderId is string && data.senderId.size() <= 128 &&
+        data.messageType in ['text', 'image', 'document', 'audio', 'location'] &&
+        data.participantUids is list && data.participantUids.size() >= 1 && data.participantUids.size() <= 50 &&
+        (!('senderName' in data) || (data.senderName is string && data.senderName.size() <= 60)) &&
+        (!('text' in data) || (data.text is string && data.text.size() <= 4000)) &&
+        (!('mediaBase64' in data) || (data.mediaBase64 is string && data.mediaBase64.size() <= 450000)) &&
+        (!('mediaName' in data) || (data.mediaName is string && data.mediaName.size() <= 160)) &&
+        (!('mediaMime' in data) || (data.mediaMime is string && data.mediaMime.size() <= 80)) &&
+        (!('latitude' in data) || data.latitude is number) &&
+        (!('longitude' in data) || data.longitude is number) &&
+        (!('replyToId' in data) || (data.replyToId is string && data.replyToId.size() <= 128)) &&
+        (!('replyToText' in data) || (data.replyToText is string && data.replyToText.size() <= 300)) &&
+        (!('replyToSender' in data) || (data.replyToSender is string && data.replyToSender.size() <= 60)) &&
+        (!('forwarded' in data) || data.forwarded is bool) &&
+        (!('edited' in data) || data.edited is bool) &&
+        (!('deleted' in data) || data.deleted is bool) &&
+        (!('pinned' in data) || data.pinned is bool) &&
+        (!('starredBy' in data) || (data.starredBy is list && data.starredBy.size() <= 50)) &&
+        (!('deliveredTo' in data) || (data.deliveredTo is list && data.deliveredTo.size() <= 50)) &&
+        (!('readBy' in data) || (data.readBy is list && data.readBy.size() <= 50)) &&
+        (!('reactions' in data) || data.reactions is map);
+    }
+
+    function isValidTyping(data) {
+      return data.uid is string && data.uid.size() <= 128 &&
+        data.isTyping is bool &&
+        data.participantUids is list && data.participantUids.size() <= 50 &&
+        (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 60));
+    }
+
+    function isValidStatus(data) {
+      return data.ownerUid is string && data.ownerUid.size() <= 128 &&
+        data.contentType in ['text', 'image'] &&
+        data.audienceUids is list && data.audienceUids.size() >= 1 && data.audienceUids.size() <= 50 &&
+        data.expiresAt is timestamp &&
+        (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() <= 60)) &&
+        (!('ownerRikzenId' in data) || (data.ownerRikzenId is string && data.ownerRikzenId.size() <= 32)) &&
+        (!('ownerPhotoBase64' in data) || (data.ownerPhotoBase64 is string && data.ownerPhotoBase64.size() <= 220000)) &&
+        (!('text' in data) || (data.text is string && data.text.size() <= 600)) &&
+        (!('caption' in data) || (data.caption is string && data.caption.size() <= 300)) &&
+        (!('backgroundColorHex' in data) || (data.backgroundColorHex is string && data.backgroundColorHex.size() <= 16)) &&
+        (!('mediaBase64' in data) || (data.mediaBase64 is string && data.mediaBase64.size() <= 450000)) &&
+        (!('viewerUids' in data) || (data.viewerUids is list && data.viewerUids.size() <= 50)) &&
+        (!('reactions' in data) || (data.reactions is list && data.reactions.size() <= 50)) &&
+        (!('mutedByUids' in data) || (data.mutedByUids is list && data.mutedByUids.size() <= 50));
+    }
+
+    function isValidCommunity(data) {
+      return data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+        data.ownerUid is string && data.ownerUid.size() <= 128 &&
+        data.adminUids is list && data.adminUids.size() <= 20 &&
+        data.memberUids is list && data.memberUids.size() <= 100 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 400)) &&
+        (!('photoBase64' in data) || (data.photoBase64 is string && data.photoBase64.size() <= 220000)) &&
+        (!('groupIds' in data) || (data.groupIds is list && data.groupIds.size() <= 30)) &&
+        (!('announcementText' in data) || (data.announcementText is string && data.announcementText.size() <= 1000)) &&
+        (!('isPublic' in data) || data.isPublic is bool);
+    }
+
+    function isValidChannel(data) {
+      return data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+        data.ownerUid is string && data.ownerUid.size() <= 128 &&
+        data.adminUids is list && data.adminUids.size() <= 20 &&
+        data.followerUids is list && data.followerUids.size() <= 200 &&
+        data.followerCount is int && data.followerCount >= 0 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 400)) &&
+        (!('photoBase64' in data) || (data.photoBase64 is string && data.photoBase64.size() <= 220000)) &&
+        (!('isPublic' in data) || data.isPublic is bool);
+    }
+
+    function isValidChannelPost(data) {
+      return data.channelId is string && data.channelId.size() <= 128 &&
+        data.authorUid is string && data.authorUid.size() <= 128 &&
+        data.text is string && data.text.size() <= 2000 &&
+        (!('mediaBase64' in data) || (data.mediaBase64 is string && data.mediaBase64.size() <= 450000)) &&
+        (!('reactions' in data) || data.reactions is map);
+    }
+
+    function isValidCall(data) {
+      return data.callerUid is string && data.callerUid.size() <= 128 &&
+        data.calleeUid is string && data.calleeUid.size() <= 128 &&
+        data.callerUid != data.calleeUid &&
+        data.participantUids is list && data.participantUids.size() == 2 &&
+        data.callType in ['voice', 'video'] &&
+        data.status in ['ringing', 'active', 'ended', 'rejected', 'missed'] &&
+        (!('callerName' in data) || (data.callerName is string && data.callerName.size() <= 60)) &&
+        (!('callerPhotoBase64' in data) || (data.callerPhotoBase64 is string && data.callerPhotoBase64.size() <= 220000)) &&
+        (!('calleeName' in data) || (data.calleeName is string && data.calleeName.size() <= 60)) &&
+        (!('calleePhotoBase64' in data) || (data.calleePhotoBase64 is string && data.calleePhotoBase64.size() <= 220000)) &&
+        (!('mutedByCaller' in data) || data.mutedByCaller is bool) &&
+        (!('mutedByCallee' in data) || data.mutedByCallee is bool) &&
+        (!('cameraOffCaller' in data) || data.cameraOffCaller is bool) &&
+        (!('cameraOffCallee' in data) || data.cameraOffCallee is bool) &&
+        (!('durationSeconds' in data) || (data.durationSeconds is int && data.durationSeconds >= 0));
+    }
+
+    function isValidReport(data) {
+      return data.reporterUid is string && data.reporterUid.size() <= 128 &&
+        data.targetType in ['user', 'message', 'group'] &&
+        data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 128 &&
+        data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 500 &&
+        data.status in ['open', 'resolved', 'dismissed'];
+    }
+
+    function isValidNotification(data) {
+      return data.recipientUid is string && data.recipientUid.size() <= 128 &&
+        data.type is string && data.type.size() <= 40 &&
+        data.title is string && data.title.size() <= 120 &&
+        data.body is string && data.body.size() <= 300 &&
+        data.isRead is bool &&
+        (!('refId' in data) || (data.refId is string && data.refId.size() <= 128));
+    }
+
+    // --- Collection Rules ---
+
+    // Admin role docs: only existing admins or verified bootstrap owner
+    match /admins/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Public profiles (no private email/DOB; phone only if opted-in)
+    match /public_profiles/{uid} {
+      allow get: if isSignedIn() && isValidId(uid);
+      allow list: if isSignedIn() && (
+        resource.data.uid == request.auth.uid ||
+        resource.data.isDiscoverableByName == true ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() &&
+        isValidId(uid) &&
+        request.auth.uid == uid &&
+        incoming().uid == request.auth.uid &&
+        (!('statusSuspended' in incoming()) || incoming().statusSuspended == false) &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidTimestamp(incoming().updatedAt) &&
+        isValidPublicProfile(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(uid) &&
+        isValidPublicProfile(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().rikzenId == existing().rikzenId &&
+        incoming().createdAt == existing().createdAt &&
+        isValidTimestamp(incoming().updatedAt) && (
+          isAdmin() ||
+          (
+            request.auth.uid == uid &&
+            (!('statusSuspended' in incoming()) || incoming().statusSuspended == existing().statusSuspended) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'displayNameLower', 'bio', 'photoBase64',
+              'searchablePhone', 'isDiscoverableByName', 'isDiscoverableByPhone',
+              'isOnline', 'showOnlineStatus', 'showLastSeen',
+              'photoVisibility', 'bioVisibility', 'whoCanRequest', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    // Private PII isolated subcollection
+    match /users/{uid}/private/{docId} {
+      allow get, list: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if isSignedIn() &&
+        isValidId(docId) &&
+        request.auth.uid == uid &&
+        incoming().uid == request.auth.uid &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidTimestamp(incoming().updatedAt) &&
+        isValidPrivateAccount(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(docId) &&
+        (request.auth.uid == uid || isAdmin()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        isValidTimestamp(incoming().updatedAt) &&
+        isValidPrivateAccount(incoming());
+      allow delete: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    // User notification inbox
+    match /users/{uid}/notifications/{notifId} {
+      allow get, list: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() &&
+        isValidId(notifId) &&
+        incoming().recipientUid == uid &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidNotification(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(notifId) &&
+        request.auth.uid == uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['isRead']) &&
+        isValidNotification(incoming());
+      allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Unique RIKZEN ID exact-match lookup (prevents duplicate IDs & prevents scraping)
+    match /rikzen_ids/{rikzenId} {
+      allow get: if isSignedIn() && isValidId(rikzenId);
+      allow list: if false;
+      allow create: if isSignedIn() &&
+        isValidId(rikzenId) &&
+        incoming().uid == request.auth.uid &&
+        incoming().rikzenId == rikzenId &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidRikzenIdLookup(incoming());
+      allow update: if false;
+      allow delete: if isSignedIn() && (existing().uid == request.auth.uid || isAdmin());
+    }
+
+    // Opt-in Phone lookup (exact-match only, zero scraping)
+    match /phone_lookup/{phone} {
+      allow get: if isSignedIn() && isValidId(phone);
+      allow list: if false;
+      allow create, update: if isSignedIn() &&
+        isValidId(phone) &&
+        incoming().uid == request.auth.uid &&
+        incoming().phone == phone &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidPhoneLookup(incoming());
+      allow delete: if isSignedIn() && (existing().uid == request.auth.uid || isAdmin());
+    }
+
+    // Friend Requests
+    match /friend_requests/{requestId} {
+      allow get: if isSignedIn() && (resource == null || request.auth.uid in resource.data.participantUids || isAdmin());
+      allow list: if isSignedIn() && (request.auth.uid in resource.data.participantUids || isAdmin());
+      allow create: if isSignedIn() &&
+        isValidId(requestId) &&
+        incoming().fromUid == request.auth.uid &&
+        incoming().status == 'pending' &&
+        request.auth.uid in incoming().participantUids &&
+        incoming().toUid in incoming().participantUids &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidTimestamp(incoming().updatedAt) &&
+        isValidFriendRequest(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(requestId) &&
+        isValidFriendRequest(incoming()) &&
+        incoming().fromUid == existing().fromUid &&
+        incoming().toUid == existing().toUid &&
+        incoming().createdAt == existing().createdAt &&
+        isValidTimestamp(incoming().updatedAt) && (
+          isAdmin() ||
+          (
+            request.auth.uid == existing().toUid &&
+            existing().status == 'pending' &&
+            incoming().status in ['accepted', 'rejected'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+      allow delete: if isSignedIn() && (
+        request.auth.uid == existing().fromUid ||
+        request.auth.uid == existing().toUid ||
+        isAdmin()
+      );
+    }
+
+    // Confirmed Friendships
+    match /friendships/{friendshipId} {
+      allow get: if isSignedIn() && (resource == null || request.auth.uid in resource.data.participantUids || isAdmin());
+      allow list: if isSignedIn() && (request.auth.uid in resource.data.participantUids || isAdmin());
+      allow create: if isSignedIn() &&
+        isValidId(friendshipId) &&
+        request.auth.uid in incoming().participantUids &&
+        incoming().userA in incoming().participantUids &&
+        incoming().userB in incoming().participantUids &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidFriendship(incoming());
+      allow update: if false;
+      allow delete: if isSignedIn() && (request.auth.uid in existing().participantUids || isAdmin());
+    }
+
+    // Conversations (DM & Group)
+    match /conversations/{conversationId} {
+      allow get: if isSignedIn() && (resource == null || request.auth.uid in resource.data.participantUids || isAdmin());
+      allow list: if isSignedIn() && (request.auth.uid in resource.data.participantUids || isAdmin());
+      allow create: if isSignedIn() &&
+        isValidId(conversationId) &&
+        incoming().createdBy == request.auth.uid &&
+        request.auth.uid in incoming().participantUids &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidTimestamp(incoming().updatedAt) &&
+        isValidConversation(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(conversationId) &&
+        isValidConversation(incoming()) &&
+        incoming().type == existing().type &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        isValidTimestamp(incoming().updatedAt) && (
+          isAdmin() ||
+          (
+            request.auth.uid in existing().participantUids && (
+              (existing().type == 'group' && request.auth.uid in existing().adminUids) ||
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'lastMessageText', 'lastMessageSenderId', 'lastMessageAt', 'pinnedMessageId', 'updatedAt'
+              ]) ||
+              (
+                existing().type == 'group' &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['participantUids', 'adminUids', 'updatedAt']) &&
+                !(request.auth.uid in incoming().participantUids)
+              )
+            )
+          )
+        );
+      allow delete: if isSignedIn() && (
+        isAdmin() ||
+        (existing().type == 'group' && request.auth.uid in existing().adminUids)
+      );
+
+      // Messages subcollection (denormalized participantUids for fast local evaluation)
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn() && (request.auth.uid in resource.data.participantUids || isAdmin());
+        allow create: if isSignedIn() &&
+          isValidId(messageId) &&
+          incoming().conversationId == conversationId &&
+          incoming().senderId == request.auth.uid &&
+          request.auth.uid in incoming().participantUids &&
+          isValidTimestamp(incoming().createdAt) &&
+          isValidTimestamp(incoming().updatedAt) &&
+          isValidMessage(incoming());
+        allow update: if isSignedIn() &&
+          isValidId(messageId) &&
+          isValidMessage(incoming()) &&
+          incoming().conversationId == existing().conversationId &&
+          incoming().senderId == existing().senderId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidTimestamp(incoming().updatedAt) &&
+          request.auth.uid in existing().participantUids && (
+            isAdmin() ||
+            (request.auth.uid == existing().senderId &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['text', 'edited', 'deleted', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['deliveredTo', 'readBy', 'reactions', 'starredBy', 'pinned', 'updatedAt'])
+          );
+        allow delete: if isSignedIn() && (request.auth.uid == existing().senderId || isAdmin());
+      }
+
+      // Typing indicator subcollection
+      match /typing/{uid} {
+        allow get, list: if isSignedIn() && request.auth.uid in resource.data.participantUids;
+        allow create, update: if isSignedIn() &&
+          isValidId(uid) &&
+          request.auth.uid == uid &&
+          request.auth.uid in incoming().participantUids &&
+          isValidTimestamp(incoming().updatedAt) &&
+          isValidTyping(incoming());
+        allow delete: if isSignedIn() && request.auth.uid == uid;
+      }
+    }
+
+    // 24-Hour Status Updates
+    match /statuses/{statusId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.ownerUid == request.auth.uid ||
+        request.auth.uid in resource.data.audienceUids ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() &&
+        isValidId(statusId) &&
+        incoming().ownerUid == request.auth.uid &&
+        request.auth.uid in incoming().audienceUids &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidStatus(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(statusId) &&
+        isValidStatus(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          request.auth.uid == existing().ownerUid ||
+          (
+            request.auth.uid in existing().audienceUids &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['viewerUids', 'reactions', 'mutedByUids'])
+          )
+        );
+      allow delete: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // Communities
+    match /communities/{communityId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.isPublic == true ||
+        request.auth.uid in resource.data.memberUids ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() &&
+        isValidId(communityId) &&
+        incoming().ownerUid == request.auth.uid &&
+        request.auth.uid in incoming().adminUids &&
+        request.auth.uid in incoming().memberUids &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidTimestamp(incoming().updatedAt) &&
+        isValidCommunity(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(communityId) &&
+        isValidCommunity(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        isValidTimestamp(incoming().updatedAt) && (
+          isAdmin() ||
+          request.auth.uid in existing().adminUids ||
+          (
+            existing().isPublic == true &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+          )
+        );
+      allow delete: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // Channels
+    match /channels/{channelId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.isPublic == true ||
+        request.auth.uid in resource.data.followerUids ||
+        resource.data.ownerUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() &&
+        isValidId(channelId) &&
+        incoming().ownerUid == request.auth.uid &&
+        request.auth.uid in incoming().adminUids &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidTimestamp(incoming().updatedAt) &&
+        isValidChannel(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(channelId) &&
+        isValidChannel(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        isValidTimestamp(incoming().updatedAt) && (
+          isAdmin() ||
+          request.auth.uid in existing().adminUids ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['followerUids', 'followerCount', 'updatedAt'])
+        );
+      allow delete: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+
+      match /posts/{postId} {
+        allow get, list: if isSignedIn() && (
+          get(/databases/$(database)/documents/channels/$(channelId)).data.isPublic == true ||
+          request.auth.uid in get(/databases/$(database)/documents/channels/$(channelId)).data.followerUids ||
+          request.auth.uid in get(/databases/$(database)/documents/channels/$(channelId)).data.adminUids ||
+          isAdmin()
+        );
+        allow create: if isSignedIn() &&
+          isValidId(postId) &&
+          incoming().channelId == channelId &&
+          incoming().authorUid == request.auth.uid &&
+          isValidTimestamp(incoming().createdAt) &&
+          isValidChannelPost(incoming()) &&
+          (request.auth.uid in get(/databases/$(database)/documents/channels/$(channelId)).data.adminUids || isAdmin());
+        allow update: if isSignedIn() &&
+          isValidId(postId) &&
+          isValidChannelPost(incoming()) &&
+          incoming().channelId == existing().channelId &&
+          incoming().authorUid == existing().authorUid &&
+          incoming().createdAt == existing().createdAt && (
+            isAdmin() ||
+            request.auth.uid in get(/databases/$(database)/documents/channels/$(channelId)).data.adminUids ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['reactions'])
+          );
+        allow delete: if isSignedIn() && (
+          request.auth.uid in get(/databases/$(database)/documents/channels/$(channelId)).data.adminUids ||
+          isAdmin()
+        );
+      }
+    }
+
+    // Voice & Video Calls
+    match /calls/{callId} {
+      allow get, list: if isSignedIn() && (request.auth.uid in resource.data.participantUids || isAdmin());
+      allow create: if isSignedIn() &&
+        isValidId(callId) &&
+        incoming().callerUid == request.auth.uid &&
+        request.auth.uid in incoming().participantUids &&
+        incoming().calleeUid in incoming().participantUids &&
+        incoming().status == 'ringing' &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidTimestamp(incoming().updatedAt) &&
+        isValidCall(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(callId) &&
+        isValidCall(incoming()) &&
+        request.auth.uid in existing().participantUids &&
+        existing().status in ['ringing', 'active'] &&
+        incoming().callerUid == existing().callerUid &&
+        incoming().calleeUid == existing().calleeUid &&
+        incoming().createdAt == existing().createdAt &&
+        isValidTimestamp(incoming().updatedAt);
+      allow delete: if isSignedIn() && (isAdmin() || request.auth.uid in existing().participantUids);
+    }
+
+    // Abuse Reports
+    match /reports/{reportId} {
+      allow get, list: if isSignedIn() && (resource.data.reporterUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() &&
+        isValidId(reportId) &&
+        incoming().reporterUid == request.auth.uid &&
+        incoming().status == 'open' &&
+        isValidTimestamp(incoming().createdAt) &&
+        isValidTimestamp(incoming().updatedAt) &&
+        isValidReport(incoming());
+      allow update: if isAdmin() &&
+        isValidId(reportId) &&
+        isValidReport(incoming()) &&
+        incoming().reporterUid == existing().reporterUid &&
+        incoming().createdAt == existing().createdAt &&
+        isValidTimestamp(incoming().updatedAt);
+      allow delete: if isAdmin();
+    }
+  }
+}

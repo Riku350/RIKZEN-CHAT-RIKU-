@@ -1,0 +1,6 @@
+{
+  "name": "Rikzen Chat",
+  "description": "Rikzen Chat is a real-time messaging Android app with unique RIKZEN IDs, friend requests, private and group chats, 24h statuses, communities, channels, calls, and privacy controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
